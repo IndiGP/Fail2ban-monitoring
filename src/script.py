@@ -1,25 +1,10 @@
 import os
 import time
 from typing import Optional
-
+from datetime import date
 import numpy as np
 import requests
-import sqlalchemy
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.sql import text
-
-
-def setup_connection() -> sqlalchemy.engine.base.Engine:
-    """Setup SQLAlchemy connection to the database
-    Returns:
-        sqlalchemy.engine.base.Engine: engine to make the connection to the database
-    """
-    load_dotenv()
-    return create_engine(
-        f"mysql+mysqldb://{os.getenv('username')}:{os.getenv('password')}@{os.getenv('ip')}",
-        encoding="utf-8",
-    )
+import pymysql
 
 
 def read_f2b_output() -> np.ndarray[str, np.dtype[str]]:
@@ -39,7 +24,7 @@ def read_f2b_output() -> np.ndarray[str, np.dtype[str]]:
 
 def get_ip_metadata(
     ip: str,
-) -> Optional[tuple[str, str, int, float, float, float]]:
+) -> Optional[tuple[str, str, int, str, float, str]]:
     """
     Extracts more data from the given ip using an external service.
 
@@ -51,9 +36,8 @@ def get_ip_metadata(
     """
     request = None
     try:
-        request = requests.get(
-            f"http://ip-api.com/json/{ip}"
-        )  # This endpoint is limited to 45 requests per minute
+        url2 = """https://ipinfo.io/""" + ip + """?token="""
+        request = requests.get(url2)
 
     except Exception as e:
         print(e)
@@ -62,43 +46,59 @@ def get_ip_metadata(
     data = request.json()
     country: str = data["country"]
     city: str = data["city"]
-    cp: int = data["zip"]
-    lat: float = data["lat"]
-    lon: float = data["lon"]
-    isp: float = data["isp"]
-    return country, city, cp, lat, lon, isp
+    cp: int = data["postal"]
+    lat: str = data["loc"]
+    isp: str = data["org"]
+    return country, city, cp, lat, isp
 
 
 def insert_data_in_db(ips: np.ndarray[str, np.dtype[str]]):
     """Inserts the data in the database.
-
+    nnection = pymysql.connect(host='localhost', user='root', password='', database='db_emp', charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor)
     Args:
         ips (np.ndarray[str, np.dtype[str]]): ips to insert
     """
-    engine = setup_connection()
-    with engine.connect() as conn:
-        for ip in ips:
-            try:
-                query = text(
-                    "insert into Grafana.ips values (:_ip,:_country,:_city,:_zip,:_lat,:_lng,:_isp, curdate()) "
+    db = pymysql.connect(
+        host="",
+        user="Fail2Ban",
+        password="",
+        database="Fail2Ban",
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    cursor = db.cursor()
+    today = date.today()
+    d1 = today.strftime("%Y-%m-%d")
+    for ip in ips:
+        try:
+            country, city, cp, lat, isp = get_ip_metadata(ip)
+            cord = lat.split(',')
+            if country is not None:
+                sql = (
+                    "INSERT INTO `grafana`(`ip`, `country`, `city`, `zip`, `lat`, `isp`, `datum`, `lon`) VALUES ('"
+                    + ip
+                    + "','"
+                    + country
+                    + "','"
+                    + city
+                    + "','"
+                    + cp
+                    + "','"
+                    + cord[0]
+                    + "','"
+                    + isp
+                    + "','"
+                    + d1
+                    + "','"
+                    + cord[1]
+                    + "')"
                 )
-                country, city, cp, lat, lon, isp = get_ip_metadata(ip)
-                if country is not None:
-                    print(f"Inserting: {ip}")
-                    conn.execute(
-                        query,
-                        _ip=ip,
-                        _country=country,
-                        _city=city,
-                        _zip=cp,
-                        _lat=lat,
-                        _lng=lon,
-                        _isp=isp,
-                    )
-                    time.sleep(1.5)
-            except Exception as e:
-                print(e)
+                cursor.execute(sql)
+                db.commit()
                 time.sleep(1.5)
+        except Exception as e:
+            print(e)
+            time.sleep(1.5)
 
 
 if __name__ == "__main__":
