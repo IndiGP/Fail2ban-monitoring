@@ -6,4 +6,4 @@ The default database is Grafana and the table is ips, the default table schema i
 
 Not better, but different fork.
 
-![Dashboard](https://raw.githubusercontent.com/IndiGP/Fail2ban-monitoring/dashboard.png)
+![Dashboard](https://raw.githubusercontent.com/IndiGP/Fail2ban-monitoring/master/dashboard.png)
